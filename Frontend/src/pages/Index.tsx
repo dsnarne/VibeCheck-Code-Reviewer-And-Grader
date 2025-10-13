@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, Code, Shield, GitBranch, Palette, Lightbulb, Users } from "lucide-react";
 import { ScoreCard } from "@/components/ScoreCard";
 import { RadarChart } from "@/components/RadarChart";
 import { FileList } from "@/components/FileList";
@@ -17,12 +17,12 @@ const Index = () => {
   const previousScore = 82;
 
   const scores = [
-    { title: "Quality", score: 92, color: "hsl(var(--quality))", icon: "💎", description: "Code maintainability & complexity" },
-    { title: "Security", score: 88, color: "hsl(var(--security))", icon: "🔒", description: "Vulnerabilities & best practices" },
-    { title: "Git Hygiene", score: 85, color: "hsl(var(--git))", icon: "📝", description: "Commit quality & PR practices" },
-    { title: "Style", score: 90, color: "hsl(var(--style))", icon: "✨", description: "Consistency & conventions" },
-    { title: "Originality", score: 78, color: "hsl(var(--originality))", icon: "🎨", description: "Unique implementations" },
-    { title: "Team Balance", score: 89, color: "hsl(var(--team))", icon: "👥", description: "Contribution distribution" },
+    { title: "Quality", score: 92, color: "hsl(var(--quality))", icon: <Code className="h-6 w-6" />, description: "Code maintainability & complexity" },
+    { title: "Security", score: 88, color: "hsl(var(--security))", icon: <Shield className="h-6 w-6" />, description: "Vulnerabilities & best practices" },
+    { title: "Git Hygiene", score: 85, color: "hsl(var(--git))", icon: <GitBranch className="h-6 w-6" />, description: "Commit quality & PR practices" },
+    { title: "Style", score: 90, color: "hsl(var(--style))", icon: <Palette className="h-6 w-6" />, description: "Consistency & conventions" },
+    { title: "Originality", score: 78, color: "hsl(var(--originality))", icon: <Lightbulb className="h-6 w-6" />, description: "Unique implementations" },
+    { title: "Team Balance", score: 89, color: "hsl(var(--team))", icon: <Users className="h-6 w-6" />, description: "Contribution distribution" },
   ];
 
   const radarData = [

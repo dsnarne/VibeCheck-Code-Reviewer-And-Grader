@@ -14,7 +14,7 @@ export function ScoreCard({ title, score, color, icon, description }: ScoreCardP
     <Card className="p-6 hover:shadow-lg transition-shadow border-border/50">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
-          {icon && <div className="text-2xl">{icon}</div>}
+          {icon && <div className="text-muted-foreground">{icon}</div>}
           <div>
             <h3 className="font-semibold text-sm text-muted-foreground">{title}</h3>
             {description && <p className="text-xs text-muted-foreground/70 mt-1">{description}</p>}

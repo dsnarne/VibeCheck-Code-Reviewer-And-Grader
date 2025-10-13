@@ -68,13 +68,15 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-background/95">
       <div className="container mx-auto px-4 py-8 max-w-7xl">
-        {/* Header */}
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-primary via-primary/80 to-primary/60 bg-clip-text text-transparent">
-            VibeCheck
-          </h1>
-          <p className="text-muted-foreground">Repository Analysis & AI Detection</p>
-        </header>
+        {/* Overall Score */}
+        <div className="mb-8">
+          <OverallScore
+            score={overallScore}
+            aiPercentage={aiPercentage}
+            previousScore={previousScore}
+            repoName={repoName}
+          />
+        </div>
 
         {/* Search & Actions */}
         <div className="flex gap-4 mb-8">
@@ -91,16 +93,6 @@ const Index = () => {
             <Plus className="h-4 w-4" />
             Analyze New Repo
           </Button>
-        </div>
-
-        {/* Overall Score */}
-        <div className="mb-8">
-          <OverallScore
-            score={overallScore}
-            aiPercentage={aiPercentage}
-            previousScore={previousScore}
-            repoName={repoName}
-          />
         </div>
 
         {/* Score Cards Grid */}

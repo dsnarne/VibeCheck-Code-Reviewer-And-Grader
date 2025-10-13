@@ -27,7 +27,7 @@ export function FileList({ files }: FileListProps) {
         <h3 className="font-semibold text-lg">File Analysis</h3>
         <Badge variant="outline">{files.length} files</Badge>
       </div>
-      <div className="space-y-4">
+      <div className="max-h-96 overflow-y-auto space-y-4 pr-2">
         {files.map((file, index) => (
           <div
             key={index}
@@ -75,3 +75,4 @@ export function FileList({ files }: FileListProps) {
     </Card>
   );
 }
+

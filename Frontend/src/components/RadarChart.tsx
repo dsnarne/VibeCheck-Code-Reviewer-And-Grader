@@ -33,3 +33,4 @@ export function RadarChart({ data }: RadarChartProps) {
     </Card>
   );
 }
+

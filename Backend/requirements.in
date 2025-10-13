@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 httpx
+supabase
 pydantic
 python-dotenv
 PyJWT[crypto]

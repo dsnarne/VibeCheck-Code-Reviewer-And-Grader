@@ -2,12 +2,13 @@ import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
-from .github_analyzer import analyze_repo, RateLimitExceeded, GitHubAPIError
+from core.analyzers.github_analyzer import analyze_repo, RateLimitExceeded, GitHubAPIError
+from api_routes.repo_analysis import router as repo_analysis_router
 
 # Load environment variables
 from dotenv import load_dotenv
 import os
-load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 app = FastAPI(
     title="VibeCheck Backend",
@@ -15,10 +16,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
-class AnalyzeRequest(BaseModel):
-    repo_url: HttpUrl
-    window_days: int = 90
-    max_commits: int = 500
+# Include API routes
+app.include_router(repo_analysis_router)
 
 class RateLimitResponse(BaseModel):
     has_token: bool
@@ -72,31 +71,6 @@ async def rate_limit_status():
         message=message
     )
 
-@app.post("/api/analyze")
-async def analyze(body: AnalyzeRequest):
-    """Analyze a GitHub repository for code quality metrics."""
-    try:
-        result = await analyze_repo(
-            str(body.repo_url), 
-            window_days=body.window_days, 
-            max_commits=body.max_commits
-        )
-        
-        # Check if result contains an error
-        if "error" in result:
-            status_code = 400 if "Rate limit" in result["error"] else 500
-            raise HTTPException(status_code=status_code, detail=result)
-        
-        return result
-        
-    except ValueError as ve:
-        raise HTTPException(status_code=400, detail=str(ve))
-    except RateLimitExceeded as e:
-        raise HTTPException(status_code=429, detail=str(e))
-    except GitHubAPIError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/")
 async def root():

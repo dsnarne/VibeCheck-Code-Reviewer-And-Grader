@@ -238,31 +238,214 @@ def compartmentalization(files: List[Dict[str, Any]]) -> float:
     return 1 - (H / math.log(len(probs)))
 
 
-async def download_repo_zipball(client: httpx.AsyncClient, owner: str, repo: str, ref: str = "main") -> bytes:
-    """Download repository as zipball from GitHub."""
-    url = f"https://api.github.com/repos/{owner}/{repo}/zipball/{ref}"
+# COMMENTED OUT: Old zipball approach - replaced with Contents API for better file size handling
+# async def download_repo_zipball(client: httpx.AsyncClient, owner: str, repo: str, ref: str = "main") -> bytes:
+#     """Download repository as zipball from GitHub."""
+#     url = f"https://api.github.com/repos/{owner}/{repo}/zipball/{ref}"
+#     headers = get_auth_headers()
+#     
+#     try:
+#         response = await client.get(url, headers=headers, follow_redirects=True)
+#         response.raise_for_status()
+#         return response.content
+#     except httpx.HTTPStatusError as e:
+#         if e.response.status_code == 404:
+#             raise GitHubAPIError(f"Repository or branch not found: {owner}/{repo}#{ref}")
+#         raise GitHubAPIError(f"Failed to download zipball: {e.response.status_code}")
+
+
+async def get_repo_contents_recursive(client: httpx.AsyncClient, owner: str, repo: str, ref: str = "main", path: str = "") -> List[Dict[str, Any]]:
+    """Recursively get all repository contents using GitHub Contents API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}" if path else f"https://api.github.com/repos/{owner}/{repo}/contents"
+    headers = get_auth_headers()
+    headers["Accept"] = "application/vnd.github+json"
+    
+    try:
+        response = await make_github_request(client, url, {"ref": ref})
+        contents = response.json()
+        
+        files = []
+        
+        # Handle single file response
+        if isinstance(contents, dict):
+            if contents.get("type") == "file":
+                files.append(contents)
+            elif contents.get("type") == "dir":
+                # This shouldn't happen with the API, but handle it
+                subfiles = await get_repo_contents_recursive(client, owner, repo, ref, contents["path"])
+                files.extend(subfiles)
+        # Handle directory response (array of items)
+        elif isinstance(contents, list):
+            for item in contents:
+                if item.get("type") == "file":
+                    files.append(item)
+                elif item.get("type") == "dir":
+                    # Recursively get subdirectory contents
+                    subfiles = await get_repo_contents_recursive(client, owner, repo, ref, item["path"])
+                    files.extend(subfiles)
+        
+        return files
+        
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise GitHubAPIError(f"Repository, branch, or path not found: {owner}/{repo}#{ref}/{path}")
+        raise GitHubAPIError(f"Failed to get contents: {e.response.status_code}")
+
+
+async def download_file_content(client: httpx.AsyncClient, file_info: Dict[str, Any]) -> bytes:
+    """Download file content using GitHub Contents API with proper size handling."""
+    url = file_info["download_url"]
     headers = get_auth_headers()
     
     try:
-        response = await client.get(url, headers=headers, follow_redirects=True)
+        response = await client.get(url, headers=headers)
         response.raise_for_status()
         return response.content
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 404:
-            raise GitHubAPIError(f"Repository or branch not found: {owner}/{repo}#{ref}")
-        raise GitHubAPIError(f"Failed to download zipball: {e.response.status_code}")
+        raise GitHubAPIError(f"Failed to download file {file_info['path']}: {e.response.status_code}")
 
 
-async def extract_and_store_files(zipball_data: bytes, repo_id: str, user_id: str, ref: str = "main") -> Dict[str, Any]:
-    """Extract zipball and store individual files for vector embedding preparation."""
+# COMMENTED OUT: Old zipball extraction approach - replaced with Contents API
+# async def extract_and_store_files(zipball_data: bytes, repo_id: str, user_id: str, ref: str = "main") -> Dict[str, Any]:
+#     """Extract zipball and store individual files for vector embedding preparation."""
+#     if not supabase:
+#         raise StorageError("Supabase client not initialized")
+#     
+#     if not zipball_data:
+#         raise StorageError("Zipball data is empty or None")
+#     
+#     print(f"DEBUG: extract_and_store_files - repo_id: {repo_id}, user_id: {user_id}, ref: {ref}")
+#     print(f"DEBUG: zipball_data size: {len(zipball_data) if zipball_data else 'None'}")
+#     
+#     # Create timestamp for this extraction
+#     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+#     base_path = f"repos/{user_id}/{repo_id}/{ref}_{timestamp}"
+#     
+#     stored_files = []
+#     file_metadata = []
+#     skipped_files = []
+#     
+#     try:
+#         # Extract zipball to temporary directory
+#         with tempfile.TemporaryDirectory() as temp_dir:
+#             zip_path = os.path.join(temp_dir, f"{repo_id}_{ref}.zip")
+#             
+#             # Write zipball data to temporary file
+#             with open(zip_path, 'wb') as f:
+#                 f.write(zipball_data)
+#             
+#             # Extract zipball
+#             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+#                 zip_ref.extractall(temp_dir)
+#             
+#             # Find the extracted directory (GitHub zipballs have a top-level directory)
+#             extracted_dirs = [d for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d)) and d != f"{repo_id}_{ref}.zip"]
+#             if not extracted_dirs:
+#                 raise StorageError("No extracted directory found in zipball")
+#             
+#             extracted_dir = os.path.join(temp_dir, extracted_dirs[0])
+#             
+#             # Walk through extracted files and upload them
+#             for root, dirs, files in os.walk(extracted_dir):
+#                 for file in files:
+#                     file_path = os.path.join(root, file)
+#                     relative_path = os.path.relpath(file_path, extracted_dir)
+#                     
+#                     print(f"DEBUG: Processing file: {file_path}, relative_path: {relative_path}")
+#                     
+#                     # Skip if relative_path is None or empty
+#                     if not relative_path:
+#                         print(f"DEBUG: Skipping file with empty relative_path: {file_path}")
+#                         skipped_files.append({"path": relative_path, "reason": "empty_path"})
+#                         continue
+#                     
+#                     # Skip certain files/directories
+#                     if should_skip_file(relative_path):
+#                         print(f"DEBUG: Skipping file based on pattern: {relative_path}")
+#                         skipped_files.append({"path": relative_path, "reason": "pattern_match"})
+#                         continue
+#                     
+#                     # Check file size first (Supabase has a 50MB limit)
+#                     file_size = os.path.getsize(file_path)
+#                     max_size = 50 * 1024 * 1024  # 50MB
+#                     
+#                     if file_size > max_size:
+#                         print(f"DEBUG: Skipping file due to size: {relative_path} ({file_size} bytes)")
+#                         skipped_files.append({"path": relative_path, "reason": "file_too_large", "size_bytes": file_size})
+#                         continue
+#                     
+#                     # Read file content
+#                     try:
+#                         with open(file_path, 'rb') as f:
+#                             file_content = f.read()
+#                     except (UnicodeDecodeError, PermissionError) as e:
+#                         # Skip binary files or files we can't read
+#                         print(f"DEBUG: Skipping file due to read error: {relative_path} - {str(e)}")
+#                         skipped_files.append({"path": relative_path, "reason": "read_error", "error": str(e)})
+#                         continue
+#                     
+#                     # Determine file type and content type
+#                     file_ext = os.path.splitext(file)[1].lower()
+#                     content_type = get_content_type(file_ext)
+#                     
+#                     # Create storage path
+#                     storage_path = f"{base_path}/{relative_path}"
+#                     
+#                     # Upload file to Supabase storage
+#                     result = supabase.storage.from_("repo-files").upload(
+#                         path=storage_path,
+#                         file=file_content,
+#                         file_options={"content-type": content_type}
+#                     )
+#                     
+#                     if isinstance(result, dict) and result.get("error"):
+#                         print(f"Warning: Failed to upload {relative_path}: {result['error']}")
+#                         continue
+#                     elif hasattr(result, 'data') and result.data is None:
+#                         print(f"Warning: Failed to upload {relative_path}: No data returned")
+#                         continue
+#                     
+#                     # Get public URL for the file
+#                     public_url = supabase.storage.from_("repo-files").get_public_url(storage_path)
+#                     
+#                     stored_files.append({
+#                         "path": relative_path,
+#                         "storage_path": storage_path,
+#                         "public_url": public_url,
+#                         "size": len(file_content),
+#                         "extension": file_ext,
+#                         "content_type": content_type
+#                     })
+#                     
+#                     file_metadata.append({
+#                         "relative_path": relative_path,
+#                         "storage_path": storage_path,
+#                         "public_url": public_url,
+#                         "size_bytes": len(file_content),
+#                         "file_extension": file_ext,
+#                         "content_type": content_type
+#                     })
+#         
+#         return {
+#             "base_path": base_path,
+#             "file_count": len(stored_files),
+#             "files": stored_files,
+#             "file_metadata": file_metadata,
+#             "skipped_files": skipped_files,
+#             "skipped_count": len(skipped_files)
+#         }
+#         
+#     except Exception as e:
+#         print(f"DEBUG: File extraction and storage exception: {str(e)}")
+#         raise StorageError(f"File extraction and storage failed: {str(e)}")
+
+
+async def extract_and_store_files_contents_api(client: httpx.AsyncClient, owner: str, repo: str, repo_id: str, user_id: str, ref: str = "main") -> Dict[str, Any]:
+    """Extract and store individual files using GitHub Contents API for better file size handling."""
     if not supabase:
         raise StorageError("Supabase client not initialized")
     
-    if not zipball_data:
-        raise StorageError("Zipball data is empty or None")
-    
-    print(f"DEBUG: extract_and_store_files - repo_id: {repo_id}, user_id: {user_id}, ref: {ref}")
-    print(f"DEBUG: zipball_data size: {len(zipball_data) if zipball_data else 'None'}")
+    print(f"DEBUG: extract_and_store_files_contents_api - repo_id: {repo_id}, user_id: {user_id}, ref: {ref}")
     
     # Create timestamp for this extraction
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -273,66 +456,51 @@ async def extract_and_store_files(zipball_data: bytes, repo_id: str, user_id: st
     skipped_files = []
     
     try:
-        # Extract zipball to temporary directory
-        with tempfile.TemporaryDirectory() as temp_dir:
-            zip_path = os.path.join(temp_dir, f"{repo_id}_{ref}.zip")
-            
-            # Write zipball data to temporary file
-            with open(zip_path, 'wb') as f:
-                f.write(zipball_data)
-            
-            # Extract zipball
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_dir)
-            
-            # Find the extracted directory (GitHub zipballs have a top-level directory)
-            extracted_dirs = [d for d in os.listdir(temp_dir) if os.path.isdir(os.path.join(temp_dir, d)) and d != f"{repo_id}_{ref}.zip"]
-            if not extracted_dirs:
-                raise StorageError("No extracted directory found in zipball")
-            
-            extracted_dir = os.path.join(temp_dir, extracted_dirs[0])
-            
-            # Walk through extracted files and upload them
-            for root, dirs, files in os.walk(extracted_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(file_path, extracted_dir)
+        # Get all repository files recursively
+        print(f"DEBUG: Getting repository contents for {owner}/{repo}")
+        all_files = await get_repo_contents_recursive(client, owner, repo, ref)
+        print(f"DEBUG: Found {len(all_files)} files in repository")
+        
+        # Process files with concurrency control
+        semaphore = asyncio.Semaphore(10)  # Limit concurrent downloads
+        
+        async def process_file(file_info: Dict[str, Any]) -> None:
+            async with semaphore:
+                relative_path = file_info["path"]
+                file_size = file_info.get("size", 0)
+                
+                print(f"DEBUG: Processing file: {relative_path}, size: {file_size} bytes")
+                
+                # Skip certain files/directories
+                if should_skip_file(relative_path):
+                    print(f"DEBUG: Skipping file based on pattern: {relative_path}")
+                    skipped_files.append({"path": relative_path, "reason": "pattern_match"})
+                    return
+                
+                # Handle file size limits according to GitHub API documentation
+                if file_size > 100 * 1024 * 1024:  # 100MB limit
+                    print(f"DEBUG: Skipping file due to size (>100MB): {relative_path} ({file_size} bytes)")
+                    skipped_files.append({"path": relative_path, "reason": "file_too_large", "size_bytes": file_size})
+                    return
+                
+                # Skip binary files (check by extension)
+                file_ext = os.path.splitext(relative_path)[1].lower()
+                if is_binary_file(file_ext):
+                    print(f"DEBUG: Skipping binary file: {relative_path}")
+                    skipped_files.append({"path": relative_path, "reason": "binary_file", "extension": file_ext})
+                    return
+                
+                try:
+                    # Download file content
+                    file_content = await download_file_content(client, file_info)
                     
-                    print(f"DEBUG: Processing file: {file_path}, relative_path: {relative_path}")
+                    # Additional size check for Supabase (50MB limit)
+                    if len(file_content) > 50 * 1024 * 1024:
+                        print(f"DEBUG: Skipping file due to Supabase size limit: {relative_path} ({len(file_content)} bytes)")
+                        skipped_files.append({"path": relative_path, "reason": "supabase_size_limit", "size_bytes": len(file_content)})
+                        return
                     
-                    # Skip if relative_path is None or empty
-                    if not relative_path:
-                        print(f"DEBUG: Skipping file with empty relative_path: {file_path}")
-                        skipped_files.append({"path": relative_path, "reason": "empty_path"})
-                        continue
-                    
-                    # Skip certain files/directories
-                    if should_skip_file(relative_path):
-                        print(f"DEBUG: Skipping file based on pattern: {relative_path}")
-                        skipped_files.append({"path": relative_path, "reason": "pattern_match"})
-                        continue
-                    
-                    # Check file size first (Supabase has a 50MB limit)
-                    file_size = os.path.getsize(file_path)
-                    max_size = 50 * 1024 * 1024  # 50MB
-                    
-                    if file_size > max_size:
-                        print(f"DEBUG: Skipping file due to size: {relative_path} ({file_size} bytes)")
-                        skipped_files.append({"path": relative_path, "reason": "file_too_large", "size_bytes": file_size})
-                        continue
-                    
-                    # Read file content
-                    try:
-                        with open(file_path, 'rb') as f:
-                            file_content = f.read()
-                    except (UnicodeDecodeError, PermissionError) as e:
-                        # Skip binary files or files we can't read
-                        print(f"DEBUG: Skipping file due to read error: {relative_path} - {str(e)}")
-                        skipped_files.append({"path": relative_path, "reason": "read_error", "error": str(e)})
-                        continue
-                    
-                    # Determine file type and content type
-                    file_ext = os.path.splitext(file)[1].lower()
+                    # Determine content type
                     content_type = get_content_type(file_ext)
                     
                     # Create storage path
@@ -347,10 +515,12 @@ async def extract_and_store_files(zipball_data: bytes, repo_id: str, user_id: st
                     
                     if isinstance(result, dict) and result.get("error"):
                         print(f"Warning: Failed to upload {relative_path}: {result['error']}")
-                        continue
+                        skipped_files.append({"path": relative_path, "reason": "upload_failed", "error": result['error']})
+                        return
                     elif hasattr(result, 'data') and result.data is None:
                         print(f"Warning: Failed to upload {relative_path}: No data returned")
-                        continue
+                        skipped_files.append({"path": relative_path, "reason": "upload_failed", "error": "No data returned"})
+                        return
                     
                     # Get public URL for the file
                     public_url = supabase.storage.from_("repo-files").get_public_url(storage_path)
@@ -372,6 +542,20 @@ async def extract_and_store_files(zipball_data: bytes, repo_id: str, user_id: st
                         "file_extension": file_ext,
                         "content_type": content_type
                     })
+                    
+                except Exception as e:
+                    print(f"DEBUG: Error processing file {relative_path}: {str(e)}")
+                    skipped_files.append({"path": relative_path, "reason": "processing_error", "error": str(e)})
+        
+        # Process files in batches to avoid overwhelming the API
+        batch_size = 20
+        for i in range(0, len(all_files), batch_size):
+            batch = all_files[i:i + batch_size]
+            await asyncio.gather(*[process_file(file_info) for file_info in batch])
+            
+            # Small delay between batches
+            if i + batch_size < len(all_files):
+                await asyncio.sleep(0.5)
         
         return {
             "base_path": base_path,
@@ -385,6 +569,23 @@ async def extract_and_store_files(zipball_data: bytes, repo_id: str, user_id: st
     except Exception as e:
         print(f"DEBUG: File extraction and storage exception: {str(e)}")
         raise StorageError(f"File extraction and storage failed: {str(e)}")
+
+
+def is_binary_file(file_ext: str) -> bool:
+    """Determine if a file extension indicates a binary file."""
+    binary_extensions = {
+        '.exe', '.dll', '.so', '.dylib', '.bin', '.app', '.deb', '.rpm', '.msi',
+        '.zip', '.tar', '.gz', '.rar', '.7z', '.bz2', '.xz',
+        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.ico', '.webp',
+        '.mp3', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.mkv', '.webm',
+        '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.woff', '.woff2', '.ttf', '.otf', '.eot',
+        '.db', '.sqlite', '.sqlite3', '.mdb', '.accdb',
+        '.pyc', '.pyo', '.class', '.jar', '.war', '.ear',
+        '.o', '.obj', '.lib', '.a', '.dylib', '.so',
+        '.map', '.min.js', '.min.css'
+    }
+    return file_ext.lower() in binary_extensions
 
 
 def should_skip_file(relative_path: str) -> bool:
@@ -666,21 +867,10 @@ async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int =
             file_storage_info = None
             if download_zipball:
                 try:
-                    # Download zipball
-                    try:
-                        zipball_data = await download_repo_zipball(client, owner, repo, repo_data.get("default_branch", "main"))
-                        
-                        # Extract and store individual files
-                        file_storage_info = await extract_and_store_files(
-                            zipball_data, repo_id, user_id, repo_data.get("default_branch", "main")
-                        )
-                    except GitHubAPIError as e:
-                        if "413" in str(e) or "Payload too large" in str(e):
-                            # Repository too large for zipball download, skip file extraction
-                            analysis_result["warning"] = f"Repository too large for file extraction: {str(e)}"
-                            file_storage_info = {"base_path": None, "file_count": 0, "file_metadata": [], "skipped_files": [], "skipped_count": 0}
-                        else:
-                            raise
+                    # Use Contents API instead of zipball for better file size handling
+                    file_storage_info = await extract_and_store_files_contents_api(
+                        client, owner, repo, repo_id, user_id, repo_data.get("default_branch", "main")
+                    )
                     
                     analysis_result["file_storage"] = {
                         "base_path": file_storage_info["base_path"],

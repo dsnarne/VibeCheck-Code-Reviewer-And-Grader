@@ -15,6 +15,7 @@ from models.schema import (
     AnalysisResponse,
     PaginatedResponse
 )
+from core.services.chatgpt import analyze_code_quality_with_chatgpt
 
 router = APIRouter(prefix="/api/repos", tags=["Repository Analysis"])
 
@@ -217,3 +218,37 @@ async def get_repo_files(repo_id: str, limit: int = 100, offset: int = 0):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get files: {str(e)}")
+
+@router.get("/{repo_id}/scoring")
+async def get_repo_scoring(repo_id: str):
+    """Get ChatGPT-powered scoring for a repository."""
+    from core.services.supabase import supabase
+    
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Get the repository data
+        repo_result = supabase.table("repos").select("*").eq("id", repo_id).execute()
+        
+        if not repo_result.data:
+            raise HTTPException(status_code=404, detail="Repository not found")
+        
+        repo_data = repo_result.data[0]
+        
+        # Extract analysis data
+        raw_analysis = repo_data.get("raw_analysis", {})
+        file_metadata = repo_data.get("file_metadata", [])
+        
+        if not raw_analysis:
+            raise HTTPException(status_code=400, detail="No analysis data available for this repository")
+        
+        # Get ChatGPT scoring
+        scoring_result = analyze_code_quality_with_chatgpt(raw_analysis, file_metadata)
+        
+        return scoring_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get scoring: {str(e)}")

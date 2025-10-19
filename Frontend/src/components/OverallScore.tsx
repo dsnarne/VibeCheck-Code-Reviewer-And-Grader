@@ -58,41 +58,46 @@ export function OverallScore({ score, aiPercentage, previousScore, repoName }: O
 
         {/* Repository Name and Score Combined */}
         <div className="px-8 pb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-foreground">{repoName}</h2>
-              <p className="text-muted-foreground text-sm">Overall Vibe Score</p>
-            </div>
+          <div className="text-center">
+            <h2 className="text-2xl font-semibold text-foreground mb-2">{repoName}</h2>
             
-            <div className="flex items-center gap-4 mr-80">
-              <div className="flex items-baseline gap-2">
-                <div className={`text-6xl font-bold ${getScoreColor(score)} leading-none`}>
-                  {score}
-                </div>
-                <div className="text-2xl font-bold text-muted-foreground">/100</div>
-                <div className={`text-xl font-bold ${getScoreColor(score)} ml-2`}>
-                  Grade {getScoreGrade(score)}
+            {score === 0 && repoName === "No Repository" ? (
+              <div className="text-center">
+                <div className="text-lg font-medium text-muted-foreground">
+                  Enter a Repository to Analyze
                 </div>
               </div>
-              
-              {scoreDiff !== null && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 backdrop-blur-sm">
-                  {scoreDiff > 0 ? (
-                    <>
-                      <TrendingUp className="h-4 w-4 text-quality" />
-                      <span className="text-sm font-medium text-quality">+{scoreDiff}</span>
-                    </>
-                  ) : scoreDiff < 0 ? (
-                    <>
-                      <TrendingDown className="h-4 w-4 text-destructive" />
-                      <span className="text-sm font-medium text-destructive">{scoreDiff}</span>
-                    </>
-                  ) : (
-                    <span className="text-sm font-medium text-muted-foreground">No change</span>
-                  )}
+            ) : (
+              <div className="flex items-center justify-center gap-4">
+                <div className="flex items-baseline gap-2">
+                  <div className={`text-6xl font-bold ${getScoreColor(score)} leading-none`}>
+                    {score}
+                  </div>
+                  <div className="text-2xl font-bold text-muted-foreground">/100</div>
+                  <div className={`text-xl font-bold ${getScoreColor(score)} ml-2`}>
+                    Grade {getScoreGrade(score)}
+                  </div>
                 </div>
-              )}
-            </div>
+                
+                {scoreDiff !== null && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 backdrop-blur-sm">
+                    {scoreDiff > 0 ? (
+                      <>
+                        <TrendingUp className="h-4 w-4 text-quality" />
+                        <span className="text-sm font-medium text-quality">+{scoreDiff}</span>
+                      </>
+                    ) : scoreDiff < 0 ? (
+                      <>
+                        <TrendingDown className="h-4 w-4 text-destructive" />
+                        <span className="text-sm font-medium text-destructive">{scoreDiff}</span>
+                      </>
+                    ) : (
+                      <span className="text-sm font-medium text-muted-foreground">No change</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

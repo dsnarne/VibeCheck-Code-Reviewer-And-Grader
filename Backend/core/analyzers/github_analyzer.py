@@ -108,28 +108,45 @@ def parse_rate_limit_headers(response: httpx.Response) -> RateLimitInfo:
     return RateLimitInfo(remaining=remaining, reset_time=reset_time, limit=limit)
 
 
-async def make_github_request(client: httpx.AsyncClient, url: str, params: Optional[Dict] = None) -> httpx.Response:
-    """Make a GitHub API request with rate limit handling."""
-    try:
-        headers = get_auth_headers()
-        response = await client.get(url, params=params, headers=headers)
-        
-        # Check rate limits
-        rate_info = parse_rate_limit_headers(response)
-        
-        if response.status_code == 403 and "rate limit" in response.text.lower():
-            raise RateLimitExceeded(f"Rate limit exceeded. Reset at {rate_info.reset_time}")
-        
-        if response.status_code == 404:
-            raise GitHubAPIError(f"Repository not found: {url}")
-        
-        response.raise_for_status()
-        return response
-        
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 403:
-            raise RateLimitExceeded("Rate limit exceeded")
-        raise GitHubAPIError(f"HTTP error: {e.response.status_code}")
+async def make_github_request(client: httpx.AsyncClient, url: str, params: Optional[Dict] = None, max_retries: int = 3) -> httpx.Response:
+    """Make a GitHub API request with rate limit handling and retry logic."""
+    for attempt in range(max_retries):
+        try:
+            headers = get_auth_headers()
+            response = await client.get(url, params=params, headers=headers)
+            
+            # Check rate limits
+            rate_info = parse_rate_limit_headers(response)
+            
+            if response.status_code == 403 and "rate limit" in response.text.lower():
+                raise RateLimitExceeded(f"Rate limit exceeded. Reset at {rate_info.reset_time}")
+            
+            if response.status_code == 404:
+                raise GitHubAPIError(f"Repository not found: {url}")
+            
+            response.raise_for_status()
+            return response
+            
+        except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout) as e:
+            if attempt < max_retries - 1:
+                print(f"DEBUG: Request timeout (attempt {attempt + 1}/{max_retries}), retrying in 2 seconds...")
+                await asyncio.sleep(2)
+                continue
+            else:
+                raise GitHubAPIError(f"Request timeout after {max_retries} attempts: {str(e)}")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                raise RateLimitExceeded("Rate limit exceeded")
+            raise GitHubAPIError(f"HTTP error: {e.response.status_code}")
+        except Exception as e:
+            if "handshake operation timed out" in str(e) and attempt < max_retries - 1:
+                print(f"DEBUG: SSL handshake timeout (attempt {attempt + 1}/{max_retries}), retrying in 3 seconds...")
+                await asyncio.sleep(3)
+                continue
+            else:
+                raise GitHubAPIError(f"Request failed: {str(e)}")
+    
+    raise GitHubAPIError("Max retries exceeded")
 
 
 async def get_repo_languages(client: httpx.AsyncClient, owner: str, repo: str) -> Dict[str, int]:
@@ -174,13 +191,15 @@ async def get_commits(client: httpx.AsyncClient, owner: str, repo: str, since: s
 
 async def get_commit_details(client: httpx.AsyncClient, owner: str, repo: str, commits: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Get detailed commit information with concurrency control."""
-    semaphore = asyncio.Semaphore(5)  # Limit concurrent requests
+    semaphore = asyncio.Semaphore(3)  # Limit concurrent requests
     
     async def fetch_commit(commit: Dict[str, Any]) -> Dict[str, Any]:
         async with semaphore:
             sha = commit["sha"]
             url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}"
             response = await make_github_request(client, url)
+            # Small delay to be gentle on GitHub API
+            await asyncio.sleep(0.1)
             return response.json()
     
     # Process commits in batches to avoid overwhelming the API
@@ -461,8 +480,8 @@ async def extract_and_store_files_contents_api(client: httpx.AsyncClient, owner:
         all_files = await get_repo_contents_recursive(client, owner, repo, ref)
         print(f"DEBUG: Found {len(all_files)} files in repository")
         
-        # Process files with concurrency control
-        semaphore = asyncio.Semaphore(10)  # Limit concurrent downloads
+        # Process files with concurrency control - reduced for stability
+        semaphore = asyncio.Semaphore(2)  # Limit concurrent downloads
         
         async def process_file(file_info: Dict[str, Any]) -> None:
             async with semaphore:
@@ -493,6 +512,9 @@ async def extract_and_store_files_contents_api(client: httpx.AsyncClient, owner:
                 try:
                     # Download file content
                     file_content = await download_file_content(client, file_info)
+                    
+                    # Small delay between GitHub API requests
+                    await asyncio.sleep(0.1)
                     
                     # Additional size check for Supabase (50MB limit)
                     if len(file_content) > 50 * 1024 * 1024:
@@ -525,6 +547,9 @@ async def extract_and_store_files_contents_api(client: httpx.AsyncClient, owner:
                     # Get public URL for the file
                     public_url = supabase.storage.from_("repo-files").get_public_url(storage_path)
                     
+                    # Small delay between file uploads to be gentle on APIs
+                    await asyncio.sleep(0.2)
+                    
                     stored_files.append({
                         "path": relative_path,
                         "storage_path": storage_path,
@@ -544,18 +569,23 @@ async def extract_and_store_files_contents_api(client: httpx.AsyncClient, owner:
                     })
                     
                 except Exception as e:
-                    print(f"DEBUG: Error processing file {relative_path}: {str(e)}")
-                    skipped_files.append({"path": relative_path, "reason": "processing_error", "error": str(e)})
+                    error_msg = str(e)
+                    if "handshake operation timed out" in error_msg:
+                        print(f"DEBUG: SSL timeout for file {relative_path}, will retry later")
+                        skipped_files.append({"path": relative_path, "reason": "ssl_timeout", "error": error_msg})
+                    else:
+                        print(f"DEBUG: Error processing file {relative_path}: {error_msg}")
+                        skipped_files.append({"path": relative_path, "reason": "processing_failed", "error": error_msg})
         
         # Process files in batches to avoid overwhelming the API
-        batch_size = 20
+        batch_size = 10
         for i in range(0, len(all_files), batch_size):
             batch = all_files[i:i + batch_size]
             await asyncio.gather(*[process_file(file_info) for file_info in batch])
             
-            # Small delay between batches
+            # Delay between batches to be gentle on APIs
             if i + batch_size < len(all_files):
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(2)
         
         return {
             "base_path": base_path,
@@ -731,8 +761,8 @@ async def analyze_repo(repo_url: str, window_days: int = 90, max_commits: int = 
     owner, repo = parse_repo(repo_url)
     since = (datetime.utcnow() - timedelta(days=window_days)).isoformat() + "Z"
 
-    timeout = httpx.Timeout(30.0)
-    limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+    timeout = httpx.Timeout(60.0, connect=30.0, read=30.0, write=30.0, pool=30.0)
+    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
 
     try:
         async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
@@ -839,8 +869,8 @@ async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int =
         raise
     since = (datetime.utcnow() - timedelta(days=window_days)).isoformat() + "Z"
 
-    timeout = httpx.Timeout(30.0)
-    limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+    timeout = httpx.Timeout(60.0, connect=30.0, read=30.0, write=30.0, pool=30.0)
+    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
 
     try:
         async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
@@ -866,6 +896,7 @@ async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int =
             
             file_storage_info = None
             if download_zipball:
+                print(f"DEBUG: File download enabled, starting file extraction...")
                 try:
                     # Use Contents API instead of zipball for better file size handling
                     file_storage_info = await extract_and_store_files_contents_api(

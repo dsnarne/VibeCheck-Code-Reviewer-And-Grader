@@ -25,16 +25,16 @@ export function RadarChart({ data }: RadarChartProps) {
   return (
     <Card className="p-6 bg-chart-bg border-border/50">
       <h3 className="font-semibold mb-6 text-lg">Score Breakdown</h3>
-      <ResponsiveContainer width="100%" height={300}>
-        <RechartsRadar data={chartData} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+      <ResponsiveContainer width="100%" height={350}>
+        <RechartsRadar data={chartData} margin={{ top: 40, right: 40, bottom: 40, left: 40 }}>
           <PolarGrid stroke="hsl(var(--border))" />
           <PolarAngleAxis 
             dataKey="category" 
             tick={{ 
               fill: 'hsl(var(--foreground))', 
-              fontSize: 12,
-              dy: 5,
-              dx: 5
+              fontSize: 14,
+              dy: -15,
+              dx: 0
             }}
             tickLine={false}
             axisLine={false}
@@ -44,7 +44,8 @@ export function RadarChart({ data }: RadarChartProps) {
             domain={[0, 100]} 
             tick={{ 
               fill: 'hsl(var(--muted-foreground))',
-              fontSize: 10
+              fontSize: 12,
+              dy: 7
             }} 
             axisLine={false}
             tickLine={false}

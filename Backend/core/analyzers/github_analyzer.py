@@ -919,6 +919,17 @@ async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int =
                     analysis_result["warning"] = f"Failed to download/extract files: {str(e)}"
                     file_storage_info = {"base_path": None, "file_count": 0, "file_metadata": []}
             
+            # Perform file analysis if files were stored
+            file_analysis_data = None
+            if file_storage_info and file_storage_info.get("file_count", 0) > 0:
+                try:
+                    from core.analyzers.simple_file_analyzer import analyze_repository_files
+                    print(f"DEBUG: Starting file analysis for {file_storage_info['file_count']} files")
+                    file_analysis_data = await analyze_repository_files(file_storage_info.get("file_metadata", []))
+                    print(f"DEBUG: File analysis complete")
+                except Exception as e:
+                    print(f"DEBUG: File analysis failed: {e}")
+            
             # Update the repository record with file storage info
             if file_storage_info:
                 update_data = {
@@ -927,6 +938,14 @@ async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int =
                     "files_ready_for_embedding": file_storage_info.get("file_count", 0) > 0,
                     "file_metadata": file_storage_info.get("file_metadata", [])
                 }
+                
+                # Add file analysis data if available
+                if file_analysis_data:
+                    update_data.update({
+                        "file_analysis": file_analysis_data.get("file_analyses", []),
+                        "score_issues": file_analysis_data.get("score_issues", {})
+                    })
+                
                 supabase.table("repos").update(update_data).eq("id", repo_id).execute()
             
             analysis_result["repo_id"] = repo_id

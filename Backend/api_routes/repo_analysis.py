@@ -243,12 +243,28 @@ async def get_repo_scoring(repo_id: str):
         # Extract analysis data
         raw_analysis = repo_data.get("raw_analysis", {})
         file_metadata = repo_data.get("file_metadata", [])
+        file_analysis_data = repo_data.get("file_analysis", [])
+        score_issues_data = repo_data.get("score_issues", {})
         
         if not raw_analysis:
             raise HTTPException(status_code=400, detail="No analysis data available for this repository")
         
         # Get ChatGPT scoring
         scoring_result = analyze_code_quality_with_chatgpt(raw_analysis, file_metadata)
+        
+        # Attach file analysis data to response
+        scoring_result['file_analysis'] = file_analysis_data
+        scoring_result['score_issues'] = score_issues_data
+        
+        # Map issues to score categories for each score
+        if score_issues_data:
+            for score in scoring_result.get('scores', []):
+                score_name = score.get('title', '')
+                if score_name in ['Quality', 'Security', 'Style']:
+                    # Map to category
+                    category_key = 'Security' if score_name == 'Security' else ('Quality' if score_name == 'Quality' else 'Style')
+                    if category_key in score_issues_data:
+                        score['issues'] = score_issues_data[category_key][:5]  # Top 5 issues
         
         return scoring_result
         

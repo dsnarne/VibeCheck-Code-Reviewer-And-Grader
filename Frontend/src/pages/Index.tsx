@@ -69,9 +69,15 @@ const Index = () => {
   };
 
   // Use scoring data if available, otherwise use default
-  const scores = scoringData?.scores || defaultScores;
+  const scores = (scoringData?.scores || defaultScores).map((score, idx) => ({
+    ...score,
+    issues: ('issues' in score ? score.issues : []) || []
+  }));
   const radarData = scoringData?.radar_data || [];
-  const files = scoringData?.files || [];
+  const files = (scoringData?.files || []).map(file => ({
+    ...file,
+    aiPercentage: file.ai_percentage || 0
+  }));
   const repoName = scoringData ? scoringData.analysis?.split(" ")[0] || "Repository" : "No Repository";
   const overallScore = scoringData?.overall_score || 0;
   const aiPercentage = scoringData?.ai_percentage || 0;
@@ -141,7 +147,7 @@ const Index = () => {
         {/* Score Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {scores.map((score, index) => (
-            <ScoreCard key={index} {...score} />
+            <ScoreCard key={index} {...score} issues={score.issues || []} />
           ))}
         </div>
 

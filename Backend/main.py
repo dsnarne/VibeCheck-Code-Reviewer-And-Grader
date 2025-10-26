@@ -37,7 +37,7 @@ class RateLimitResponse(BaseModel):
 @app.get("/debug/env")
 async def debug_env():
     """Debug environment variables."""
-    from .github_analyzer import GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID, GITHUB_TOKEN
+    from core.analyzers.github_analyzer import GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID, GITHUB_TOKEN
     
     return {
         "GITHUB_APP_ID": GITHUB_APP_ID,
@@ -55,7 +55,7 @@ async def health():
 @app.get("/api/rate-limit-status", response_model=RateLimitResponse)
 async def rate_limit_status():
     """Check GitHub API rate limit status."""
-    from .github_analyzer import GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID, GITHUB_TOKEN
+    from core.analyzers.github_analyzer import GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID, GITHUB_TOKEN
     
     has_app = bool(GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY and GITHUB_APP_INSTALLATION_ID)
     has_token = bool(GITHUB_TOKEN)

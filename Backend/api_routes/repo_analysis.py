@@ -30,8 +30,10 @@ async def analyze_repository(body: AnalyzeRequest):
         )
         
         if "error" in result:
-            status_code = 400 if "Rate limit" in result["error"] else 500
-            raise HTTPException(status_code=status_code, detail=result)
+            # Only treat as error if it's not a "no commits" case
+            if "No commits found in the specified time window" not in result["error"]:
+                status_code = 400 if "Rate limit" in result["error"] else 500
+                raise HTTPException(status_code=status_code, detail=result)
         
         return AnalysisResponse(**result)
         
@@ -58,8 +60,10 @@ async def analyze_and_store_repository(body: AnalyzeWithStorageRequest):
         )
         
         if "error" in result:
-            status_code = 400 if "Rate limit" in result["error"] else 500
-            raise HTTPException(status_code=status_code, detail=result)
+            # Only treat as error if it's not a "no commits" case
+            if "No commits found in the specified time window" not in result["error"]:
+                status_code = 400 if "Rate limit" in result["error"] else 500
+                raise HTTPException(status_code=status_code, detail=result)
         
         return AnalysisResponse(**result)
         

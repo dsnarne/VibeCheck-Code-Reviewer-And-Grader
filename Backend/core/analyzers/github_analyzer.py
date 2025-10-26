@@ -51,6 +51,9 @@ def generate_installation_token() -> str:
     if not all([GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY, GITHUB_APP_INSTALLATION_ID]):
         raise ValueError("GitHub App credentials not configured")
     
+    # Ensure private key is properly formatted with newlines
+    private_key = GITHUB_APP_PRIVATE_KEY.replace('\\n', '\n')
+    
     # Create JWT token
     now = int(time.time())
     payload = {
@@ -60,7 +63,7 @@ def generate_installation_token() -> str:
     }
     
     # Generate JWT
-    jwt_token = jwt.encode(payload, GITHUB_APP_PRIVATE_KEY, algorithm="RS256")
+    jwt_token = jwt.encode(payload, private_key, algorithm="RS256")
     
     # Exchange JWT for installation token
     url = f"https://api.github.com/app/installations/{GITHUB_APP_INSTALLATION_ID}/access_tokens"
@@ -756,7 +759,7 @@ async def get_repo_info(client: httpx.AsyncClient, owner: str, repo: str) -> Dic
     return response.json()
 
 
-async def analyze_repo(repo_url: str, window_days: int = 90, max_commits: int = 500) -> Dict[str, Any]:
+async def analyze_repo(repo_url: str, window_days: int = 3650, max_commits: int = 500) -> Dict[str, Any]:
     """Analyze a GitHub repository using REST API with proper error handling."""
     owner, repo = parse_repo(repo_url)
     since = (datetime.utcnow() - timedelta(days=window_days)).isoformat() + "Z"
@@ -857,7 +860,7 @@ async def analyze_repo(repo_url: str, window_days: int = 90, max_commits: int = 
     }
 
 
-async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int = 90, 
+async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int = 3650, 
                                 max_commits: int = 500, download_zipball: bool = True) -> Dict[str, Any]:
     """Analyze a GitHub repository and store results in database with file extraction for vector embedding."""
     print(f"DEBUG: Starting analyze_and_store_repo with repo_url: {repo_url}, user_id: {user_id}")

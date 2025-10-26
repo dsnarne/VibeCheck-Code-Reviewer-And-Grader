@@ -45,7 +45,7 @@ class RepoBase(BaseModel):
     stars_count: int = Field(0, description="Number of stars")
     forks_count: int = Field(0, description="Number of forks")
     size_bytes: int = Field(0, description="Repository size in bytes")
-    window_days: int = Field(90, description="Analysis window in days")
+    window_days: int = Field(3650, description="Analysis window in days")
     max_commits: int = Field(500, description="Maximum commits to analyze")
     languages: Optional[Dict[str, Any]] = Field(None, description="Language analysis data")
     team_data: Optional[Dict[str, Any]] = Field(None, description="Team contribution analysis")
@@ -91,7 +91,7 @@ class FileMetadata(BaseModel):
 # API Request/Response models
 class AnalyzeRequest(BaseModel):
     repo_url: str = Field(..., description="GitHub repository URL")
-    window_days: int = Field(90, description="Analysis window in days")
+    window_days: int = Field(3650, description="Analysis window in days")
     max_commits: int = Field(500, description="Maximum commits to analyze")
     download_zipball: bool = Field(True, description="Whether to download and extract files")
 
@@ -99,7 +99,7 @@ class AnalyzeRequest(BaseModel):
 class AnalyzeWithStorageRequest(BaseModel):
     repo_url: str = Field(..., description="GitHub repository URL")
     user_id: UUID = Field(..., description="User ID for storage")
-    window_days: int = Field(90, description="Analysis window in days")
+    window_days: int = Field(3650, description="Analysis window in days")
     max_commits: int = Field(500, description="Maximum commits to analyze")
     download_zipball: bool = Field(True, description="Whether to download and extract files")
 

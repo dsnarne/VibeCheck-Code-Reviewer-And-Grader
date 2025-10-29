@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List
+import os
+import logging
 from core.analyzers.github_analyzer import (
     analyze_and_store_repo, 
     analyze_repo,
@@ -16,8 +18,11 @@ from models.schema import (
     PaginatedResponse
 )
 from core.services.chatgpt import analyze_code_quality_with_chatgpt
+from core.analyzers.code_issue_analyzer import analyze_repository_files
+from core.analyzers.supabase_file_analyzer import analyze_repository_files_from_supabase
 
 router = APIRouter(prefix="/api/repos", tags=["Repository Analysis"])
+logger = logging.getLogger(__name__)
 
 @router.post("/analyze", response_model=AnalysisResponse)
 async def analyze_repository(body: AnalyzeRequest):
@@ -266,9 +271,99 @@ async def get_repo_scoring(repo_id: str):
                     if category_key in score_issues_data:
                         score['issues'] = score_issues_data[category_key][:5]  # Top 5 issues
         
+        # Populate files array from file_metadata if not already populated
+        if 'files' not in scoring_result or not scoring_result['files']:
+            files = []
+            logger.info(f"Populating files array from {len(file_metadata)} file metadata entries")
+            for file in file_metadata[:50]:  # Limit to 50 files
+                name = file.get('name', '')
+                if not name:
+                    # Try to extract name from path
+                    path = file.get('relative_path', file.get('path', ''))
+                    name = path.split('/')[-1] if path else 'unknown'
+                
+                files.append({
+                    "name": name,
+                    "path": file.get('relative_path', file.get('path', '')),
+                    "score": 0,  # Default score
+                    "issues": [],
+                    "aiPercentage": 0,
+                    "quality": 0
+                })
+            scoring_result['files'] = files
+            logger.info(f"Populated {len(files)} files for scoring response")
+        else:
+            logger.info(f"Files already in scoring_result: {len(scoring_result.get('files', []))}")
+        
         return scoring_result
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get scoring: {str(e)}")
+
+@router.get("/repos/{repo_id}/issues")
+async def get_code_issues(repo_id: str, category: str = None):
+    """
+    Get detailed code issues for a repository with line numbers and code snippets.
+    
+    Returns issues categorized by:
+    - Quality: Missing type hints, complex functions, duplicate code
+    - Security: Vulnerabilities, hardcoded secrets, unsafe operations
+    - Style: Formatting issues, long lines, missing docstrings
+    - Originality: Potential AI-generated code patterns
+    - Team: Contribution balance issues
+    """
+    from core.services.supabase import supabase
+    
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    
+    try:
+        # Get the repository data
+        repo_result = supabase.table("repos").select("*").eq("id", repo_id).execute()
+        
+        if not repo_result.data:
+            raise HTTPException(status_code=404, detail="Repository not found")
+        
+        repo_data = repo_result.data[0]
+        file_metadata = repo_data.get("file_metadata", [])
+        file_storage_base_path = repo_data.get("file_storage_base_path")
+        
+        if not file_metadata:
+            return {
+                "total_issues": 0,
+                "issues": {},
+                "message": "No file metadata available for this repository"
+            }
+        
+        # Check if files are stored in Supabase or locally
+        if not file_storage_base_path:
+            raise HTTPException(status_code=404, detail="Repository files storage path not found")
+        
+        # Try Supabase first, then local filesystem
+        if file_storage_base_path.startswith('repos/'):
+            # Files are in Supabase storage
+            issues_result = await analyze_repository_files_from_supabase(file_metadata, file_storage_base_path)
+        else:
+            # Files are on local filesystem
+            if not os.path.exists(file_storage_base_path):
+                raise HTTPException(status_code=404, detail="Repository files not found on disk")
+            issues_result = analyze_repository_files(file_metadata, file_storage_base_path)
+        
+        # Filter by category if specified
+        if category:
+            issues_result['issues'] = {
+                category: issues_result['issues'].get(category, [])
+            }
+            issues_result['summary'] = {
+                category: issues_result['summary'].get(category, {'total': 0, 'errors': 0, 'warnings': 0, 'info': 0})
+            }
+        
+        return issues_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error analyzing repository files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze repository files: {str(e)}")

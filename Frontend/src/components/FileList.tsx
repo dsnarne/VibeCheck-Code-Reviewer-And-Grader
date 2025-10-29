@@ -1,24 +1,63 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileCode } from "lucide-react";
+import { FileCode, Eye } from "lucide-react";
+import { FileViewer } from "@/components/FileViewer";
+import { useState } from "react";
+import { apiService } from "@/lib/api";
 
 interface FileItem {
   name: string;
   path: string;
-  aiPercentage: number;
-  quality: number;
-  flags: string[];
+  score?: number;
+  issues?: string[];
+  aiPercentage?: number;
+  quality?: number;
+  flags?: string[];
 }
 
 interface FileListProps {
   files: FileItem[];
+  repoId?: string;
 }
 
-export function FileList({ files }: FileListProps) {
+export function FileList({ files, repoId }: FileListProps) {
+  const [selectedFile, setSelectedFile] = useState<any>(null);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
   const getAIColor = (percentage: number) => {
     if (percentage >= 80) return "text-destructive";
     if (percentage >= 50) return "text-warning";
     return "text-muted-foreground";
+  };
+
+  const handleViewFile = async (file: FileItem) => {
+    if (!repoId) {
+      alert("Cannot view file: Repository ID not available");
+      return;
+    }
+
+    setIsLoadingFile(true);
+    try {
+      console.log("Fetching file:", { repoId, filePath: file.path });
+      console.log("File object:", file);
+      
+      // Try to find the correct path field
+      const filePathToUse = file.path || file.relative_path || file.name;
+      console.log("Using file path:", filePathToUse);
+      
+      const fileData = await apiService.getFileContent(repoId, filePathToUse);
+      console.log("File data received:", fileData);
+      setSelectedFile(fileData);
+    } catch (error) {
+      console.error("Failed to load file:", error);
+      console.error("Error details:", {
+        repoId,
+        filePath: file.path,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      alert(`Failed to load file content: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsLoadingFile(false);
+    }
   };
 
   return (
@@ -36,17 +75,29 @@ export function FileList({ files }: FileListProps) {
             <div className="flex items-start gap-3 flex-1">
               <FileCode className="h-5 w-5 text-muted-foreground mt-1" />
               <div className="flex-1">
-                <div className="font-medium mb-1">{file.name}</div>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-medium">{file.name}</div>
+                  {repoId && (
+                    <button
+                      onClick={() => handleViewFile(file)}
+                      disabled={isLoadingFile}
+                      className="px-3 py-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors flex items-center gap-1"
+                    >
+                      <Eye className="h-3 w-3" />
+                      {isLoadingFile ? 'Loading...' : 'View File'}
+                    </button>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground mb-2">{file.path}</div>
                 <div className="flex gap-2 flex-wrap">
-                  {file.flags.map((flag, flagIndex) => (
+                  {(file.flags || file.issues || []).slice(0, 3).map((flag, flagIndex) => (
                     <Badge
                       key={flagIndex}
                       variant="outline"
                       className={
-                        flag.includes("Security") || flag.includes("High AI%")
+                        flag.toLowerCase().includes("security")
                           ? "border-destructive/50 text-destructive"
-                          : flag.includes("Excellent") || flag.includes("Good")
+                          : flag.toLowerCase().includes("excellent") || flag.toLowerCase().includes("good")
                           ? "border-quality/50 text-quality"
                           : "border-warning/50 text-warning"
                       }
@@ -54,24 +105,37 @@ export function FileList({ files }: FileListProps) {
                       {flag}
                     </Badge>
                   ))}
+                  {((file.flags || file.issues || []).length > 3) && (
+                    <Badge variant="outline" className="text-muted-foreground">+
+                      { (file.flags || file.issues || []).length - 3 } more
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-6 text-sm">
               <div className="text-right">
                 <div className="text-xs text-muted-foreground mb-1">AI%</div>
-                <div className={`font-bold ${getAIColor(file.aiPercentage)}`}>
-                  {file.aiPercentage}%
+                <div className={`font-bold ${getAIColor(file.aiPercentage || 0)}`}>
+                  {file.aiPercentage ?? 0}%
                 </div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-muted-foreground mb-1">Quality</div>
-                <div className="font-bold text-foreground">{file.quality}</div>
+                <div className="font-bold text-foreground">{file.quality ?? file.score ?? 0}</div>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* File Viewer Modal */}
+      {selectedFile && (
+        <FileViewer
+          file={selectedFile}
+          onClose={() => setSelectedFile(null)}
+        />
+      )}
     </Card>
   );
 }

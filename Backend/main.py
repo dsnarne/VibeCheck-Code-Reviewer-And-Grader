@@ -1,15 +1,27 @@
 import os
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, HttpUrl
 from typing import Optional
 from core.analyzers.github_analyzer import analyze_repo, RateLimitExceeded, GitHubAPIError
 from api_routes.repo_analysis import router as repo_analysis_router
+from api_routes.file_content import router as file_content_router
+from api_routes.repo_files import router as repo_files_router
 
 # Load environment variables
 from dotenv import load_dotenv
-import os
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
+# Configure logging to file
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('backend.log'),
+        logging.StreamHandler()  # Also print to console
+    ]
+)
 
 app = FastAPI(
     title="VibeCheck Backend",
@@ -37,6 +49,8 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(repo_analysis_router)
+app.include_router(file_content_router)
+app.include_router(repo_files_router)
 
 class RateLimitResponse(BaseModel):
     has_token: bool

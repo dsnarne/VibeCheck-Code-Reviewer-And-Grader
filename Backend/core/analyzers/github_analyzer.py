@@ -918,6 +918,12 @@ async def analyze_and_store_repo(repo_url: str, user_id: str, window_days: int =
                     # Continue without file extraction if download/upload fails
                     analysis_result["warning"] = f"Failed to download/extract files: {str(e)}"
                     file_storage_info = {"base_path": None, "file_count": 0, "file_metadata": []}
+                except Exception as e:
+                    import traceback
+                    print(f"DEBUG: Unexpected error during file extraction: {e}")
+                    print(f"DEBUG: Traceback: {traceback.format_exc()}")
+                    analysis_result["warning"] = f"Failed to download/extract files: {str(e)}"
+                    file_storage_info = {"base_path": None, "file_count": 0, "file_metadata": []}
             
             # Perform file analysis if files were stored
             file_analysis_data = None

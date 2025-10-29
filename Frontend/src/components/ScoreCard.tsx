@@ -11,6 +11,7 @@ interface CodeIssue {
   type: string;
   description: string;
   snippet: string;
+  suggestion?: string;
 }
 
 interface ScoreCardProps {
@@ -27,17 +28,6 @@ export function ScoreCard({ title, score, color, icon, description, issues = [] 
   
   // Debug log to see what issues we have
   console.log(`ScoreCard ${title} has ${issues.length} issues:`, issues);
-  
-  // Temporary: Add sample issues for testing when no data available and score > 0
-  const displayIssues = issues.length > 0 ? issues : (score > 0 ? [{
-    file: "example.py",
-    line: 42,
-    category: title.toLowerCase(),
-    severity: "medium",
-    type: "test",
-    description: `Sample issue for ${title}`,
-    snippet: `def sample_function():  # This is a test issue`
-  }] : []);
 
   return (
     <Card className="p-6 hover:shadow-lg transition-shadow border-border/50">
@@ -57,7 +47,7 @@ export function ScoreCard({ title, score, color, icon, description, issues = [] 
         '--progress-background': color 
       } as React.CSSProperties} />
       
-      {displayIssues.length > 0 && (
+      {issues.length > 0 && (
         <button 
           onClick={(e) => {
             e.preventDefault();
@@ -68,13 +58,13 @@ export function ScoreCard({ title, score, color, icon, description, issues = [] 
           className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-2 w-full mb-2"
         >
           {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          {isExpanded ? 'Hide' : 'Show'} Issues ({displayIssues.length})
+          {isExpanded ? 'Hide' : 'Show'} Issues ({issues.length})
         </button>
       )}
       
-      {isExpanded && displayIssues.length > 0 && (
+      {isExpanded && issues.length > 0 && (
         <div className="mt-4 space-y-2 max-h-96 overflow-y-auto">
-          {displayIssues.map((issue, idx) => (
+          {issues.map((issue, idx) => (
             <div key={idx} className="p-3 rounded-lg border bg-muted/30 text-sm">
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-medium">{issue.file}</span>
@@ -83,8 +73,17 @@ export function ScoreCard({ title, score, color, icon, description, issues = [] 
                   {issue.severity}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mb-2">{issue.description}</p>
-              <code className="text-xs bg-muted px-2 py-1 rounded block font-mono">{issue.snippet}</code>
+              <p className="text-xs text-foreground mb-2 font-medium">{issue.description}</p>
+              {issue.suggestion && (
+                <p className="text-xs text-primary mb-2 italic">
+                  💡 {issue.suggestion}
+                </p>
+              )}
+              <div className="bg-muted/50 rounded-md p-3">
+                <pre className="text-xs font-mono whitespace-pre-wrap break-words overflow-x-auto">
+                  {issue.snippet}
+                </pre>
+              </div>
             </div>
           ))}
         </div>

@@ -2,8 +2,11 @@ from supabase import create_client
 import dotenv
 import os
 
-# Load .env file from the backend directory
-dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"))
+# Load .env file from the project root
+import sys
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+env_path = os.path.join(project_root, ".env")
+dotenv.load_dotenv(env_path)
 
 # Get Supabase configuration
 SUPABASE_URL = os.environ.get("SUPABASE_URL")

@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Search, Plus, Code, Shield, GitBranch, Palette, Lightbulb, Users, Loader2 } from "lucide-react";
 import { ScoreCard } from "@/components/ScoreCard";
 import { RadarChart } from "@/components/RadarChart";
 import { FileList } from "@/components/FileList";
 import { OverallScore } from "@/components/OverallScore";
-import { apiService, ScoringResponse } from "@/lib/api";
+import { apiService, ScoringResponse, CodeIssue } from "@/lib/api";
 
 const Index = () => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -14,6 +15,35 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [scoringData, setScoringData] = useState<ScoringResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [issuesData, setIssuesData] = useState<Record<string, CodeIssue[]>>({});
+  const [repoId, setRepoId] = useState<string | null>(null);
+
+  // Load the latest repository on mount
+  useEffect(() => {
+    const loadLatestRepo = async () => {
+      if (!scoringData && !isLoading) {
+        try {
+          // First try to get repos list to find the latest
+          const reposResponse = await fetch('http://localhost:8000/api/repos?limit=1');
+          if (reposResponse.ok) {
+            const repos = await reposResponse.json();
+            if (repos && repos.length > 0) {
+              const latestRepoId = repos[0].id;
+              setRepoId(latestRepoId);
+              
+              // Load scoring data for this repo
+              const scoringResponse = await apiService.getRepositoryScoring(latestRepoId);
+              setScoringData(scoringResponse);
+              console.log('Loaded latest repository:', latestRepoId);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load latest repository:", error);
+        }
+      }
+    };
+    loadLatestRepo();
+  }, []); // Run once on mount
 
   // Default data for when no analysis is loaded
   const defaultScores = [
@@ -57,9 +87,36 @@ const Index = () => {
       }
 
       if (analysisResponse.repo_id) {
+        setRepoId(analysisResponse.repo_id);
+        
         // Get ChatGPT scoring
         const scoringResponse = await apiService.getRepositoryScoring(analysisResponse.repo_id);
         setScoringData(scoringResponse);
+
+        // Try to fetch detailed code issues for each category
+        try {
+          const issuesResponse = await apiService.getRepositoryIssues(analysisResponse.repo_id);
+          setIssuesData(issuesResponse.issues || {});
+
+          // Also merge issues into files for the FileList component
+          const issuesByPath: Record<string, { issue: string; line: number }[]> = {};
+          Object.values(issuesResponse.issues || {}).forEach((arr: any) => {
+            (arr as any[]).forEach((iss: any) => {
+              const key = iss.path;
+              if (!issuesByPath[key]) issuesByPath[key] = [];
+              issuesByPath[key].push({ issue: iss.issue, line: iss.line });
+            });
+          });
+
+          const mergedFiles = (scoringResponse.files || []).map(f => ({
+            ...f,
+            issues: (issuesByPath[f.path] || []).map(x => `${x.issue} (L${x.line})`),
+          }));
+
+          setScoringData({ ...scoringResponse, files: mergedFiles });
+        } catch (e) {
+          console.warn('Could not fetch issues:', e);
+        }
       }
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || "An error occurred");
@@ -146,9 +203,35 @@ const Index = () => {
 
         {/* Score Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {scores.map((score, index) => (
-            <ScoreCard key={index} {...score} issues={score.issues || []} />
-          ))}
+          {scores.map((score, index) => {
+            // Map category name to issues data
+            const categoryKey = score.title.toLowerCase();
+            const categoryIssues = issuesData[categoryKey] || [];
+            
+            // Debug logging
+            console.log(`Category: ${score.title} (${categoryKey}), Issues found:`, categoryIssues);
+            
+            const mappedIssues = categoryIssues.map(issue => ({
+              file: issue.file,
+              line: issue.line,
+              category: issue.category,
+              severity: issue.severity === 'error' ? 'high' : issue.severity === 'warning' ? 'medium' : 'low',
+              type: issue.issue_type,
+              description: issue.issue,
+              snippet: issue.codeSnippet,
+              suggestion: issue.suggestion
+            }));
+            
+            console.log(`Mapped issues for ${score.title}:`, mappedIssues);
+            
+            return (
+              <ScoreCard 
+                key={index} 
+                {...score} 
+                issues={mappedIssues}
+              />
+            );
+          })}
         </div>
 
         {/* Radar Chart */}
@@ -157,7 +240,18 @@ const Index = () => {
         </div>
 
         {/* File List */}
-        <FileList files={files} />
+        {files.length > 0 ? (
+          <FileList files={files} repoId={repoId || undefined} />
+        ) : (
+          <Card className="p-6 border-border/50">
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">No files available for display.</p>
+              <p className="text-sm text-muted-foreground mt-2">
+                Files may not have been stored during repository analysis.
+              </p>
+            </div>
+          </Card>
+        )}
 
         {/* Analysis and Recommendations */}
         {scoringData && (

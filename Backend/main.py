@@ -8,6 +8,7 @@ from core.analyzers.github_analyzer import analyze_repo, RateLimitExceeded, GitH
 from api_routes.repo_analysis import router as repo_analysis_router
 from api_routes.file_content import router as file_content_router
 from api_routes.repo_files import router as repo_files_router
+from api_routes.file_analyzer import router as file_analyzer_router
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -51,6 +52,7 @@ app.add_middleware(
 app.include_router(repo_analysis_router)
 app.include_router(file_content_router)
 app.include_router(repo_files_router)
+app.include_router(file_analyzer_router)
 
 class RateLimitResponse(BaseModel):
     has_token: bool

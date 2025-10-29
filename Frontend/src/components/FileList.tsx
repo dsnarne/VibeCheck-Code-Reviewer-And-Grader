@@ -44,8 +44,35 @@ export function FileList({ files, repoId }: FileListProps) {
       const filePathToUse = file.path || file.relative_path || file.name;
       console.log("Using file path:", filePathToUse);
       
+      // Get file content
       const fileData = await apiService.getFileContent(repoId, filePathToUse);
       console.log("File data received:", fileData);
+      
+      // Analyze the file for issues (on-demand analysis)
+      try {
+        console.log("Analyzing file for quality score and issues...");
+        const analysisResult = await apiService.analyzeFile(repoId, filePathToUse);
+        
+        // Attach analysis results to file data
+        fileData.quality_score = analysisResult.quality_score;
+        fileData.issues_found = analysisResult.issues_found;
+        
+        // Convert issues to expected format
+        fileData.issues = analysisResult.issues.map((iss: any) => ({
+          line: iss.line,
+          category: iss.category,
+          severity: iss.severity || 'medium',
+          issue: iss.issue,
+          suggestion: iss.suggestion
+        }));
+        
+        console.log(`✅ File analysis complete: quality=${analysisResult.quality_score}, issues=${analysisResult.issues_found}`);
+      } catch (e) {
+        console.warn('Could not analyze file:', e);
+        fileData.issues = [];
+        fileData.quality_score = 100;
+      }
+      
       setSelectedFile(fileData);
     } catch (error) {
       console.error("Failed to load file:", error);
